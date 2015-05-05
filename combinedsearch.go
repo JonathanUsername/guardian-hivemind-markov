@@ -42,16 +42,21 @@ Our version of this program reads text from standard input, parsing it into a
 Markov chain, and writes generated text to standard output.
 The prefix and output lengths can be specified using the -prefix and -words
 flags on the command-line.
+
+
+This file was slightly changed by me, Jon King
+
 */
 package main
 
 import (
+    "bytes"
     "sync"
     "os/exec"
-    // "bufio"
+    "bufio"
     "flag"
     "fmt"
-    // "io"
+    "io"
     "math/rand"
     "strings"
     "time"
@@ -87,25 +92,12 @@ func NewChain(prefixLen int) *Chain {
 
 // Build reads text from the provided Reader and
 // parses it into prefixes and suffixes that are stored in Chain.
-// func (c *Chain) Build(r io.Reader) {
-//     br := bufio.NewReader(r)
-//     p := make(Prefix, c.prefixLen)
-//     for {
-//         var s string
-//         if _, err := fmt.Fscan(br, &s); err != nil {
-//             break
-//         }
-//         key := p.String()
-//         c.chain[key] = append(c.chain[key], s)
-//         p.Shift(s)
-//     }
-// }
-
-func (c *Chain) Build(r string) {
+func (c *Chain) Build(r io.Reader) {
+    br := bufio.NewReader(r)
     p := make(Prefix, c.prefixLen)
     for {
         var s string
-        if _, err := fmt.Sscan(r, &s); err != nil {
+        if _, err := fmt.Fscan(br, &s); err != nil {
             break
         }
         key := p.String()
@@ -131,15 +123,14 @@ func (c *Chain) Generate(n int) string {
 }
 
 
-func Scrape(query string, wg *sync.WaitGroup) string {
-    fmt.Println(query)
-    out, err := exec.Command("./scrape", "-q", query).Output()
-    if err != nil {
-        fmt.Printf("%s", err)
-    }
-    output := string(out)
+func Scrape(query string, wg *sync.WaitGroup, c *Chain) {
+    // Run command, then plug the command's Stdout into the expectant maw of Build's io.Reader
+    cmd := exec.Command("./scrape", "-q", query)
+    var out bytes.Buffer
+    cmd.Stdout = &out
+    cmd.Run()
+    c.Build(&out)
     wg.Done()
-    return output
 }
 
 func handler(w http.ResponseWriter, r *http.Request) {
@@ -151,17 +142,16 @@ func main() {
     numWords := flag.Int("words", 100, "maximum number of words to print")
     prefixLen := flag.Int("prefix", 2, "prefix length in words") 
     query := flag.String("query", "", "search term from which to generate text")
+    
     flag.Parse()                     // Parse command-line flags.
-
-    var wg sync.WaitGroup
-    wg.Add(1)
-    seedtext := Scrape(*query, &wg)           // test
-    wg.Wait()
-
     rand.Seed(time.Now().UnixNano()) // Seed the random number generator.
     c := NewChain(*prefixLen)     // Initialize a new Chain.
-    // fmt.Printf(seedtext)
-    c.Build(seedtext)            
+
+    var wg sync.WaitGroup         // Create waitgroup for async node process
+    wg.Add(1)
+    Scrape(*query, &wg, c)        // Then run node process
+    wg.Wait()
+
     text := c.Generate(*numWords) // Generate text.
     fmt.Println(text)             // Write text to standard output.
 }
