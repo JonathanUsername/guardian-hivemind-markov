@@ -54,7 +54,6 @@ import (
     "sync"
     "os/exec"
     "bufio"
-    "flag"
     "fmt"
     "io"
     "math/rand"
@@ -134,18 +133,21 @@ func Scrape(query string, wg *sync.WaitGroup, c *Chain) {
     wg.Done()
 }
 
-func handler(w http.ResponseWriter, r *http.Request, flags Flagholder) {
+func handler(w http.ResponseWriter, r *http.Request) {
     q := r.URL.Query().Get("q")
-    wordL, err := strconv.Atoi(r.URL.Query().Get("ww"))
-    if err != nil {
-        panic(err)
-    }
-    this := CreateArticle(q, wordL, flags)
+    wordL, err := strconv.Atoi(r.URL.Query().Get("wl"))
+    check(err)
+    prefixL, err := strconv.Atoi(r.URL.Query().Get("pl"))
+    check(err)
+    this := CreateArticle(q, wordL, prefixL)
     fmt.Fprintf(w, "%s", this)
 }
 
-func CreateArticle(query string, wordL int, flags Flagholder) string {
-    c := NewChain(flags.prefixLen)     // Initialize a new Chain.
+func CreateArticle(query string, wordL int, prefixL int) string {
+    rand.Seed(time.Now().UnixNano()) // Seed the random number generator.
+    c := NewChain(prefixL)     // Initialize a new Chain.
+
+    fmt.Println(query, wordL, prefixL)
 
     var wg sync.WaitGroup         // Create waitgroup for async node process
     wg.Add(1)
@@ -157,28 +159,16 @@ func CreateArticle(query string, wordL int, flags Flagholder) string {
 }
 
 func main() {
-    // Register command-line flags.
-    numWords := flag.Int("words", 100, "maximum number of words to print")
-    prefixLen := flag.Int("prefix", 2, "prefix length in words") 
-    query := flag.String("query", "", "search term from which to generate text")
-
-    flag.Parse()                     // Parse command-line flags.
-    rand.Seed(time.Now().UnixNano()) // Seed the random number generator.
-
-    flags := Flagholder{*numWords,*prefixLen,*query}
-
-    listen(flags)
+    listen()
 }
 
-func listen(flags Flagholder) {
-    http.HandleFunc("/",func(w http.ResponseWriter, r *http.Request) {
-        handler(w, r, flags)
-    })
+func listen() {
+    http.HandleFunc("/", handler)
     http.ListenAndServe(":8080", nil)
 }
 
-type Flagholder struct {
-    numWords int
-    prefixLen int
-    query string
+func check(err error) {
+    if err != nil {
+        panic(err)
+    }
 }
