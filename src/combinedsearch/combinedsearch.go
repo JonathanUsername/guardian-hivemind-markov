@@ -44,7 +44,7 @@ The prefix and output lengths can be specified using the -prefix and -words
 flags on the command-line.
 
 
-This file was slightly changed by me, Jon King
+This file was altered by me, Jon King, jonathan.j.king@gmail.com
 
 */
 package main
@@ -61,6 +61,10 @@ import (
     "time"
     "net/http"
     "strconv"
+    "github.com/jmoiron/jsonq"
+    "encoding/json"
+    "io/ioutil"
+    "os"
 )
 
 // Prefix is a Markov chain prefix of one or more words.
@@ -126,7 +130,7 @@ func (c *Chain) Generate(n int) string {
 func Scrape(query string, wg *sync.WaitGroup, c *Chain) {
     // Run command, then plug the command's Stdout into the expectant maw of Build's io.Reader
     fmt.Println(query)
-    cmd := exec.Command("./bin/scrape", "-q", query)
+    cmd := exec.Command("./bin/scrape-guardian.sh", getKey(), query)
     var out bytes.Buffer
     cmd.Stdout = &out
     cmd.Run()
@@ -176,4 +180,24 @@ func check(err error) {
     if err != nil {
         panic(err)
     }
+}
+
+func getKey() string {
+    file, e := ioutil.ReadFile("./keys.private.json")
+    if e != nil {
+        fmt.Printf("File error: %v\n", e)
+        os.Exit(1)
+    }
+    apikey, err := fromJson(string(file)).String("key")
+    check(err)
+    return apikey
+}
+
+func fromJson(js string) *jsonq.JsonQuery {
+    // usage: var, err := fromJson(json).String("value", "nestedvalue", "somearray, "0")
+    data := map[string]interface{}{}
+    dec := json.NewDecoder(strings.NewReader(js))
+    dec.Decode(&data)
+    jq := jsonq.NewQuery(data)
+    return jq
 }
