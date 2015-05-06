@@ -125,6 +125,7 @@ func (c *Chain) Generate(n int) string {
 
 func Scrape(query string, wg *sync.WaitGroup, c *Chain) {
     // Run command, then plug the command's Stdout into the expectant maw of Build's io.Reader
+    fmt.Println(query)
     cmd := exec.Command("./scrape", "-q", query)
     var out bytes.Buffer
     cmd.Stdout = &out
