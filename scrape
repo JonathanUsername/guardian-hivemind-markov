@@ -6,7 +6,7 @@ var request = require("request"),
     html_strip = require('htmlstrip-native'),
     keys = require("./keys.private.json"),
     page_size = 200,
-    url = "http://content.guardianapis.com/search?show-fields=body&page-size=100",
+    url = "http://content.guardianapis.com/search?show-fields=body&page-size=200",
     query = "";
 
 argv.q = argv.q || argv.query;
