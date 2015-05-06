@@ -60,7 +60,8 @@ import (
     "math/rand"
     "strings"
     "time"
-    "net/http"    
+    "net/http"
+    "strconv"
 )
 
 // Prefix is a Markov chain prefix of one or more words.
@@ -133,8 +134,26 @@ func Scrape(query string, wg *sync.WaitGroup, c *Chain) {
     wg.Done()
 }
 
-func handler(w http.ResponseWriter, r *http.Request) {
-    fmt.Fprintf(w, "Hi there, I love %s!", r.URL.Path[1:])
+func handler(w http.ResponseWriter, r *http.Request, flags Flagholder) {
+    q := r.URL.Query().Get("q")
+    wordL, err := strconv.Atoi(r.URL.Query().Get("ww"))
+    if err != nil {
+        panic(err)
+    }
+    this := CreateArticle(q, wordL, flags)
+    fmt.Fprintf(w, "%s", this)
+}
+
+func CreateArticle(query string, wordL int, flags Flagholder) string {
+    c := NewChain(flags.prefixLen)     // Initialize a new Chain.
+
+    var wg sync.WaitGroup         // Create waitgroup for async node process
+    wg.Add(1)
+    Scrape(query, &wg, c)        // Then run node process
+    wg.Wait()
+
+    text := c.Generate(wordL) // Generate text.
+    return text
 }
 
 func main() {
@@ -142,16 +161,24 @@ func main() {
     numWords := flag.Int("words", 100, "maximum number of words to print")
     prefixLen := flag.Int("prefix", 2, "prefix length in words") 
     query := flag.String("query", "", "search term from which to generate text")
-    
+
     flag.Parse()                     // Parse command-line flags.
     rand.Seed(time.Now().UnixNano()) // Seed the random number generator.
-    c := NewChain(*prefixLen)     // Initialize a new Chain.
 
-    var wg sync.WaitGroup         // Create waitgroup for async node process
-    wg.Add(1)
-    Scrape(*query, &wg, c)        // Then run node process
-    wg.Wait()
+    flags := Flagholder{*numWords,*prefixLen,*query}
 
-    text := c.Generate(*numWords) // Generate text.
-    fmt.Println(text)             // Write text to standard output.
+    listen(flags)
+}
+
+func listen(flags Flagholder) {
+    http.HandleFunc("/",func(w http.ResponseWriter, r *http.Request) {
+        handler(w, r, flags)
+    })
+    http.ListenAndServe(":8080", nil)
+}
+
+type Flagholder struct {
+    numWords int
+    prefixLen int
+    query string
 }
