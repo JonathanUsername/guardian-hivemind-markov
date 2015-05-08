@@ -158,6 +158,8 @@ func main() {
 func handler(w http.ResponseWriter, r *http.Request) {
     fmt.Println("requestURI:  " + string(r.RequestURI))
     q := r.URL.Query().Get("q")
+    q = strings.Replace(q," ","+",-1)
+    fmt.Println(q)
     wordL, err := strconv.Atoi(r.URL.Query().Get("wl"))
     if err != nil {
         wordL = 100
