@@ -1,3 +1,4 @@
+
 // The Markov chain section of this code is taken from the "Generating arbitrary text"
 // codewalk that can be found here: http://golang.org/doc/codewalk/markov/
 
@@ -101,7 +102,7 @@ func Scrape(query string, wg *sync.WaitGroup) string {
     check(err)
     defer resp.Body.Close()
 
-    // why can't I find a go-based json parser that works with io.Reader rather than strings? For purity's sake I'm doing this rather than piping to jq, but I think this is a bottleneck...
+    // Why can't I find a go-based json parser that works with io.Reader rather than strings? For purity's sake I'm doing this rather than piping to jq, but I think this is a bottleneck...
     body, err := ioutil.ReadAll(resp.Body)
 
     wg.Done()
