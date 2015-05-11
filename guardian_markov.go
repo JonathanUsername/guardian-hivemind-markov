@@ -85,7 +85,7 @@ func (c *Chain) Generate(n int, single bool) string {
                 p[i] = arr[i]
             }
             words = append(words, first_prefix)
-            fmt.Println(first_prefix)
+            fmt.Println("First prefix of chain:")
             fmt.Println(p.String())
             break
         }
@@ -101,18 +101,17 @@ func (c *Chain) Generate(n int, single bool) string {
         //     }
         // }
         if len(choices) == 0 {
-            fmt.Println("No choices.")
+            fmt.Println("No choices. Breaking.")
             break
         }
         next := choices[rand.Intn(len(choices))]
         if single && strings.Contains(next, "<end/>") {
-            fmt.Println("found end:")
-            fmt.Println(words)
-            fmt.Println(next)
+            fmt.Println("Found end tag. Breaking.")
             break
         }
         words = append(words, next)
         if i == n-1 {
+            fmt.Println("Reached word limit. Breaking.")
             words = append(words, "[...]")
         }
         p.Shift(next)
