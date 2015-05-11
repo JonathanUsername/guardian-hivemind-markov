@@ -20,9 +20,12 @@ import (
     "io/ioutil"
     "os"
     "regexp"
+    "net/url"
 )
 
-var keyfile string
+var KEYFILE string
+var DEFAULT_WORD_LENGTH int = 2000
+var DEFAULT_PREFIX_LENGTH int = 2
 
 // Prefix is a Markov chain prefix of one or more words.
 type Prefix []string
@@ -62,43 +65,88 @@ func (c *Chain) Build(r io.Reader) {
             break
         }
         key := p.String()
+        // fmt.Println(key)
         c.chain[key] = append(c.chain[key], s)
         p.Shift(s)
     }
 }
 
 // Generate returns a string of at most n words generated from Chain.
-func (c *Chain) Generate(n int) string {
+func (c *Chain) Generate(n int, single bool) string {
     p := make(Prefix, c.prefixLen)
     var words []string
+    // select first word randomly
+    var first_prefix string
+    for first_prefix, _ = range c.chain {
+        if len(first_prefix) > 6 && first_prefix[:6] == "<end/>"{
+            // first_prefix = strings.Replace(first_prefix,"<end/>","",-1)
+            arr := strings.Split(first_prefix, " ")
+            for i:=0;i<c.prefixLen;i++ {
+                p[i] = arr[i]
+            }
+            words = append(words, first_prefix)
+            fmt.Println(first_prefix)
+            fmt.Println(p.String())
+            break
+        }
+    }
+    // generate it
     for i := 0; i < n; i++ {
-        choices := c.chain[p.String()]
+        var word string = p.String()
+        choices := c.chain[word]
+        // if i < 3 {
+        //     for j :=0; j < len(choices); j++ {
+        //         fmt.Println("CHOICES:"+string(j))
+        //         fmt.Println(choices[j])
+        //     }
+        // }
         if len(choices) == 0 {
+            fmt.Println("No choices.")
             break
         }
         next := choices[rand.Intn(len(choices))]
+        if single && strings.Contains(next, "<end/>") {
+            fmt.Println("found end:")
+            fmt.Println(words)
+            fmt.Println(next)
+            break
+        }
         words = append(words, next)
+        if i == n-1 {
+            words = append(words, "[...]")
+        }
         p.Shift(next)
     }
     return strings.Join(words, " ")
 }
 
+// func hasClosingSuffix(str string) bool {
+//     return strings.ContainsAny(".?!", str)
+// }
+
 func getFields(stringbody string, field string) string {
     results, err := fromJson(stringbody).Array("response", "results")
     check(err)
     var wholebody string
-    regex, _ := regexp.Compile("<[^>]+>")
+    strip_tags_regex, _ := regexp.Compile("<[^>]*>")
     for _, each := range results {
-        body := each.(map[string]interface{})["fields"].(map[string]interface{})[field]
-        cleaned := regex.ReplaceAllString(body.(string), " ")
-        wholebody += cleaned
+        if body, ok := each.(map[string]interface{})["fields"].(map[string]interface{})[field]; ok {
+            var chunk string = body.(string)
+            if field != "body" {
+                body = strip_tags_regex.ReplaceAllString(body.(string), " ")
+            }
+            chunk += " <end/>"
+            wholebody += chunk
+        }
     }
     return wholebody
 }
 
 func Scrape(query string, wg *sync.WaitGroup) string {
-    url := fmt.Sprintf("http://content.guardianapis.com/search?show-fields=body,headline&page-size=200&api-key=%s&q=%s", getKey(), query)
-    resp, err := http.Get(url)
+    query = url.QueryEscape(query)
+    fmt.Println(query)
+    apiurl := fmt.Sprintf("http://content.guardianapis.com/search?show-fields=body,headline,trailText&page-size=200&api-key=%s&q=%s", getKey(), query)
+    resp, err := http.Get(apiurl)
     check(err)
     defer resp.Body.Close()
 
@@ -112,6 +160,7 @@ func Scrape(query string, wg *sync.WaitGroup) string {
 type article_response struct {
     Headline    string
     Body        string
+    Trailtext   string
 }
 
 func CreateArticle(query string, wordL int, prefixL int) article_response {
@@ -121,37 +170,43 @@ func CreateArticle(query string, wordL int, prefixL int) article_response {
     scrape := Scrape(query, &wg)
     wg.Wait()
 
-    // text = buildPart("headline", scrape, 2, 20)   // this turned out to be a bit too random
 
-    // build headline
-    arr, _ := fromJson(scrape).Array("response", "results")
-    random_index := rand.Intn(len(arr))
-    headline, _ := fromJson(scrape).String("response", "results", strconv.Itoa(random_index), "fields", "headline")
+    fmt.Println("Building headline")
+    // arr, _ := fromJson(scrape).Array("response", "results")
+    // random_index := rand.Intn(len(arr))
+    headline := buildPart("headline", scrape, prefixL, wordL, true)   // this turned out to be a bit too random
+    // headline, _ := fromJson(scrape).String("response", "results", strconv.Itoa(random_index), "fields", "headline")
 
-    // build body
-    body := buildPart("body", scrape, prefixL, wordL)
+    
+    fmt.Println("Building subheading")
+    trailtext := buildPart("trailText", scrape, prefixL, wordL, true)
 
-    artr := article_response{Headline: headline, Body: body}
+    fmt.Println("Building body")
+    body := buildPart("body", scrape, prefixL, wordL, true)
+
+    artr := article_response{Headline: headline, Body: body, Trailtext: trailtext}
     return artr
 }
 
-func buildPart(part string, scrape string, prefixL int, wordL int) string {
+func buildPart(part string, scrape string, prefixL int, wordL int, single_sentence bool) string {
     c := NewChain(prefixL)
+    fmt.Println("BEFOREFIELDS")
     cleanbody := getFields(scrape, part)
+    fmt.Println("AFTERFIELDS")
     b := io.Reader(strings.NewReader(cleanbody))
     c.Build(b)
-    text := c.Generate(wordL)
+    text := c.Generate(wordL, single_sentence)
     return text
 }
 
 func main() {
-    flag.StringVar(&keyfile, "keyfile", "", "File that stores Guardian Developer API key.")
+    flag.StringVar(&KEYFILE, "keyfile", "", "File that stores Guardian Developer API key.")
     flag.Parse()
-    if keyfile == "" {
+    if KEYFILE == "" {
         fmt.Println("Keyfile argument (--keyfile) missing. Assuming default path.")
-        keyfile = "./keys.private.json"
+        KEYFILE = "./keys.private.json"
     }
-    fmt.Printf("Keyfile: '%s'\n", keyfile)
+    fmt.Printf("Keyfile: '%s'\n", KEYFILE)
     listen()
 }
 
@@ -162,11 +217,11 @@ func handler(w http.ResponseWriter, r *http.Request) {
     fmt.Println(q)
     wordL, err := strconv.Atoi(r.URL.Query().Get("wl"))
     if err != nil {
-        wordL = 100
+        wordL = DEFAULT_WORD_LENGTH
     }
     prefixL, err := strconv.Atoi(r.URL.Query().Get("pl"))
     if err != nil {
-        prefixL = 2
+        prefixL = DEFAULT_PREFIX_LENGTH
     }
     article := CreateArticle(q, wordL, prefixL)
     jsonresp, err := json.Marshal(article)
@@ -182,7 +237,7 @@ func listen() {
 }
 
 func getKey() string {
-    file, e := ioutil.ReadFile(keyfile)
+    file, e := ioutil.ReadFile(KEYFILE)
     if e != nil {
         fmt.Printf("File error: %v\n", e)
         os.Exit(1)
