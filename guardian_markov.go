@@ -144,7 +144,7 @@ func getFields(stringbody string, field string) string {
 func Scrape(query string, wg *sync.WaitGroup) string {
     query = url.QueryEscape(query)
     fmt.Println(query)
-    apiurl := fmt.Sprintf("http://content.guardianapis.com/search?show-fields=body,headline,trailText&page-size=200&api-key=%s&q=%s", getKey(), query)
+    apiurl := fmt.Sprintf("http://content.guardianapis.com/search?show-fields=body,headline,trailText,main&page-size=200&api-key=%s&q=%s", getKey(), query)
     resp, err := http.Get(apiurl)
     check(err)
     defer resp.Body.Close()
@@ -160,6 +160,7 @@ type article_response struct {
     Headline    string
     Body        string
     Trailtext   string
+    Main        string
 }
 
 func CreateArticle(query string, wordL int, prefixL int) article_response {
@@ -168,30 +169,22 @@ func CreateArticle(query string, wordL int, prefixL int) article_response {
     wg.Add(1)
     scrape := Scrape(query, &wg)
     wg.Wait()
-
-
-    fmt.Println("Building headline")
     // arr, _ := fromJson(scrape).Array("response", "results")
     // random_index := rand.Intn(len(arr))
-    headline := buildPart("headline", scrape, prefixL, wordL, true)   // this turned out to be a bit too random
-    // headline, _ := fromJson(scrape).String("response", "results", strconv.Itoa(random_index), "fields", "headline")
-
-    
-    fmt.Println("Building subheading")
+    // randomly_selected_headline, _ := fromJson(scrape).String("response", "results", strconv.Itoa(random_index), "fields", "headline")
+    headline := buildPart("headline", scrape, prefixL, wordL, true)
     trailtext := buildPart("trailText", scrape, prefixL, wordL, true)
-
-    fmt.Println("Building body")
     body := buildPart("body", scrape, prefixL, wordL, true)
+    main := buildPart("main", scrape, prefixL, wordL, true)
 
-    artr := article_response{Headline: headline, Body: body, Trailtext: trailtext}
+    artr := article_response{Headline: headline, Body: body, Trailtext: trailtext, Main: main}
     return artr
 }
 
 func buildPart(part string, scrape string, prefixL int, wordL int, single_sentence bool) string {
+    fmt.Println("Building " + part)
     c := NewChain(prefixL)
-    fmt.Println("BEFOREFIELDS")
     cleanbody := getFields(scrape, part)
-    fmt.Println("AFTERFIELDS")
     b := io.Reader(strings.NewReader(cleanbody))
     c.Build(b)
     text := c.Generate(wordL, single_sentence)
