@@ -23,6 +23,7 @@ import (
     "github.com/jmoiron/jsonq"
     "github.com/nu7hatch/gouuid"
     "gopkg.in/mgo.v2"
+    "gopkg.in/mgo.v2/bson"
 )
 
 var KEYFILE string
@@ -158,20 +159,20 @@ func Scrape(query string, wg *sync.WaitGroup) string {
     return string(body)
 }
 
-type article_response struct {
+type ArticleResponse struct {
     Id          string `json:"id" bson:"_id,omitempty"`
-    Article     article `json:"article" bson:"article"`
+    Article     Article `json:"article" bson:"article"`
     Cache       string `json:"cache" bson:"cache"`
 }
 
-type article struct {
+type Article struct {
     Headline    string
     Body        string
     Trailtext   string
     Main        string
 }
 
-func CreateArticle(query string, wordL int, prefixL int) article_response {
+func CreateArticle(query string, wordL int, prefixL int) ArticleResponse {
     rand.Seed(time.Now().UnixNano()) // Seed the random number generator.
     var wg sync.WaitGroup         // Create waitgroup for scrape process
     wg.Add(1)
@@ -184,23 +185,36 @@ func CreateArticle(query string, wordL int, prefixL int) article_response {
     trailtext := buildPart("trailText", scrape, prefixL, wordL, true)
     body := buildPart("body", scrape, prefixL, wordL, true)
     main := buildPart("main", scrape, prefixL, wordL, true)
-    art := article{Headline: headline, Body: body, Trailtext: trailtext, Main: main}
+    art := Article{Headline: headline, Body: body, Trailtext: trailtext, Main: main}
     resp := cacheArticle(art)
     return resp
 }
 
-func cacheArticle(article article) article_response {
-    fmt.Printf("Caching")
+func cacheConnection() *mgo.Collection {
     session, err := mgo.Dial("mongodb://localhost")
     check(err)
     c := session.DB("markov").C("cache")
+    return c
+}
+
+func cacheArticle(article Article) ArticleResponse {
+    fmt.Println("Caching")
+    c := cacheConnection()
     newu, err := uuid.NewV4()
     check(err)
     uuid := newu.String()
-    cached := article_response{Article: article, Cache: uuid}
+    cached := ArticleResponse{Article: article, Cache: uuid}
     ee := c.Insert(cached)
     check(ee)
     return cached
+}
+
+func retrieveCache(uuid string) ArticleResponse {
+    fmt.Println("Retrieving from cache")
+    c := cacheConnection()
+    result := ArticleResponse{}
+    c.Find(bson.M{"cache": uuid}).One(&result)
+    return result
 }
 
 func buildPart(part string, scrape string, prefixL int, wordL int, single_sentence bool) string {
@@ -237,12 +251,22 @@ func handler(w http.ResponseWriter, r *http.Request) {
     if err != nil {
         prefixL = DEFAULT_PREFIX_LENGTH
     }
-    article := CreateArticle(q, wordL, prefixL)
-    jsonresp, err := json.Marshal(article)
-    check(err)
-    fmt.Println("returning!")
-    fmt.Fprintf(w, "%s", jsonresp)
+    cache_id := r.URL.Query().Get("cache")
+    if len(cache_id) != 0 {
+        article := retrieveCache(cache_id)
+        jsonresp, err := json.Marshal(article)
+        check(err)
+        fmt.Println("returning from cache!")
+        fmt.Fprintf(w, "%s", jsonresp)
+    } else {
+        article := CreateArticle(q, wordL, prefixL)
+        jsonresp, err := json.Marshal(article)
+        check(err)
+        fmt.Println("returning!")
+        fmt.Fprintf(w, "%s", jsonresp)
+    }
 }
+
 
 func listen() {
     fmt.Printf("Listening on port 8080\n\n")
