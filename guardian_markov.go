@@ -85,8 +85,8 @@ func (c *Chain) Generate(n int, single bool) string {
                 p[i] = arr[i]
             }
             words = append(words, first_prefix)
-            fmt.Println("First prefix of chain:")
-            fmt.Println(p.String())
+            // fmt.Println("First prefix of chain:")
+            // fmt.Println(p.String())
             break
         }
     }
