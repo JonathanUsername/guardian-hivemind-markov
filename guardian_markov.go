@@ -15,12 +15,14 @@ import (
     "time"
     "net/http"
     "strconv"
-    "github.com/jmoiron/jsonq"
     "encoding/json"
     "io/ioutil"
     "os"
     "regexp"
     "net/url"
+    "github.com/jmoiron/jsonq"
+    "github.com/nu7hatch/gouuid"
+    "gopkg.in/mgo.v2"
 )
 
 var KEYFILE string
@@ -157,6 +159,12 @@ func Scrape(query string, wg *sync.WaitGroup) string {
 }
 
 type article_response struct {
+    Id          string `json:"id" bson:"_id,omitempty"`
+    Article     article `json:"article" bson:"article"`
+    Cache       string `json:"cache" bson:"cache"`
+}
+
+type article struct {
     Headline    string
     Body        string
     Trailtext   string
@@ -176,9 +184,23 @@ func CreateArticle(query string, wordL int, prefixL int) article_response {
     trailtext := buildPart("trailText", scrape, prefixL, wordL, true)
     body := buildPart("body", scrape, prefixL, wordL, true)
     main := buildPart("main", scrape, prefixL, wordL, true)
+    art := article{Headline: headline, Body: body, Trailtext: trailtext, Main: main}
+    resp := cacheArticle(art)
+    return resp
+}
 
-    artr := article_response{Headline: headline, Body: body, Trailtext: trailtext, Main: main}
-    return artr
+func cacheArticle(article article) article_response {
+    fmt.Printf("Caching")
+    session, err := mgo.Dial("mongodb://localhost")
+    check(err)
+    c := session.DB("markov").C("cache")
+    newu, err := uuid.NewV4()
+    check(err)
+    uuid := newu.String()
+    cached := article_response{Article: article, Cache: uuid}
+    ee := c.Insert(cached)
+    check(ee)
+    return cached
 }
 
 func buildPart(part string, scrape string, prefixL int, wordL int, single_sentence bool) string {
